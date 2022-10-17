@@ -59,10 +59,10 @@ Functional Analysis
 Biz
 入門書
 
-Investment Analysis and Portfolio Management, by Frank K. Reilly, Keith C. Brown ✓
-投资分析与组合管理, 弗兰克·K·赖利, 基思·C·布朗
-The Economics of Money, Banking, and Financial Markets, Frederic Mishkin
-米什金 货币金融学, 弗雷德里克·S.米什金
+* Investment Analysis and Portfolio Management, by Frank K. Reilly, Keith C. Brown ✓
+* 投资分析与组合管理, 弗兰克·K·赖利, 基思·C·布朗
+* The Economics of Money, Banking, and Financial Markets, Frederic Mishkin
+* 米什金 货币金融学, 弗雷德里克·S.米什金
 ISE Investments, Zvi Bodie, Alex Kane, Alan Marcus ✓
 投资学, 滋维·博迪, 亚历克斯·凯恩, 艾伦 J. 马库斯
 Corporate Finance, Stephen Ross ✓
@@ -73,7 +73,7 @@ Options, Futures, and Other Derivatives, John Hull ✓
 期权、期货及其他衍生产品, 约翰·赫尔
 Behavioral Finance, William Forbes
 行为金融, 威廉·福布斯
-Security Analysis, Benjamin Graham, David Dodd
+* Security Analysis, Benjamin Graham, David Dodd
 CS
 R
 Python
