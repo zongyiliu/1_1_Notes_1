@@ -1,17 +1,15 @@
 ## Quick start
 
-**前置 deepspeed==0.7.0 pytorch-lightning==1.9.2 torch 1.13.1+cu117**
-
-文件： https://github.com/BlinkDL/RWKV-LM/tree/main/RWKV-v4neo (latest code, compatible with v4).
-
-**Prompt** for testing Q&A of LLMs. (found by minimizing ChatGPT ppls for RWKV 1.5B)
+* **前置 deepspeed==0.7.0 pytorch-lightning==1.9.2 torch 1.13.1+cu117**
+* 文件： https://github.com/BlinkDL/RWKV-LM/tree/main/RWKV-v4neo (latest code, compatible with v4).
+* **Prompt** for testing Q&A of LLMs. (found by minimizing ChatGPT ppls for RWKV 1.5B)
 ```python
 prompt = f'\nQ & A\n\nQuestion:\n{qq}\n\nDetailed Expert Answer:\n' # let the model generate after this
 ```
 
 ### Inference
 
-**Run RWKV-4 Pile models:** Download models from https://huggingface.co/BlinkDL. Set TOKEN_MODE = 'pile' in run.py and run it. It's fast even on CPU (the default mode).
+* **Run RWKV-4 Pile models:** Download models from https://huggingface.co/BlinkDL. Set TOKEN_MODE = 'pile' in run.py and run it. It's fast even on CPU (the default mode).
 
 **Colab for RWKV-4 Pile 1.5B**: https://colab.research.google.com/drive/1F7tZoPZaWJf1fsCmZ5tjw6sYHiFOYVWM
 
