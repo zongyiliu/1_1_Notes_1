@@ -1,10 +1,10 @@
 ## Quick start
 
-**IMPORTANT: Use deepspeed==0.7.0 pytorch-lightning==1.9.2 torch 1.13.1+cu117**
+**前置 deepspeed==0.7.0 pytorch-lightning==1.9.2 torch 1.13.1+cu117**
 
-Use https://github.com/BlinkDL/RWKV-LM/tree/main/RWKV-v4neo (latest code, compatible with v4).
+文件： https://github.com/BlinkDL/RWKV-LM/tree/main/RWKV-v4neo (latest code, compatible with v4).
 
-Here is a great prompt for testing Q&A of LLMs. Works for any model: (found by minimizing ChatGPT ppls for RWKV 1.5B)
+**Prompt** for testing Q&A of LLMs. (found by minimizing ChatGPT ppls for RWKV 1.5B)
 ```python
 prompt = f'\nQ & A\n\nQuestion:\n{qq}\n\nDetailed Expert Answer:\n' # let the model generate after this
 ```
