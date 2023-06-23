@@ -58,23 +58,10 @@ out.write(ss + "\n")
 
 * CUDA kernel: https://github.com/BlinkDL/RWKV-CUDA to speedup training.
 
-## The pseudocode (execution from top to bottom):
 
-![RWKV-v2-RNN](RWKV-v2-RNN.png)
+## RWKV-3 的特色
 
-The a b c d factors work together to build a time-decay curve: [X, 1, W, W^2, W^3, ...].
-
-Write out the formulas for "token at pos 2" and "token at pos 3" and you will get the idea:
-* a and b: EMAs of kv and k.
-* c and d: these are a and b combined with "self-attention".
-
-kv / k is the memory mechanism. The token with high k can be remembered for a long duration, if W is close to 1 in the channel.
-
-The R-gate is important for performance. k = info strength of this token (to be passed to future tokens). r = whether to apply the info to this token.
-
-## RWKV-3 improvements
-
-Use different trainable TimeMix factors for R / K / V in SA and FF layers. Example:
+ R / K / V in SA and FF 的 layer 中的 TimeMix factors 不同
 ```python
 xx = self.time_shift(x)
 xk = x * self.time_mix_k + xx * (1 - self.time_mix_k)
@@ -82,7 +69,7 @@ xv = x * self.time_mix_v + xx * (1 - self.time_mix_v)
 xr = x * self.time_mix_r + xx * (1 - self.time_mix_r)
 ```
 
-Use preLN instead of postLN (more stable & faster convergence):
+使用 preLN 而不是 postLN: 
 ```python
 if self.layer_id == 0:
 	x = self.ln0(x)
@@ -90,13 +77,9 @@ x = x + self.att(self.ln1(x))
 x = x + self.ffn(self.ln2(x))
 ```
 
-## Explaining the code for RWKV-3 GPT mode
-
 ### The GPT mode - overview
+RWKV-3 GPT mode 和其他的 preLN GPT 相似, 但是区别是 embedding 后的一个 extra LN 
 
-The building blocks of RWKV-3 GPT mode are similar to that of a usual preLN GPT.
-
-The only difference is an extra LN after embedding. Note you can absorb this LN into the embedding after finishing the training.
 ```python
 x = self.emb(idx)  # input: idx = token indices
 x = self.ln_emb(x) # extra LN after embedding
@@ -108,19 +91,10 @@ x = x + self.ffn_n(self.ln_ffn_n(x))
 x = self.ln_head(x) # final LN before projection
 x = self.head(x)    # output: x = logits
 ```
-It is important to initialize emb to tiny values, such as nn.init.uniform_(a=-1e-4, b=1e-4), to utilize my trick https://github.com/BlinkDL/SmallInitEmb.
 
-For the 1.5B RWKV-3, I use Adam (no wd, no dropout) optimizer on 8 * A100 40G.
+使用了之前的原理: https://github.com/BlinkDL/SmallInitEmb.
+### ATT block
 
-batchSz = 32 * 896, ctxLen = 896. I am using tf32 so the batchSz is a bit small. 
-
-For the first 15B tokens, LR is fixed at 3e-4, and beta=(0.9, 0.99).
-
-Then I set beta=(0.9, 0.999), and do an exponential decay of LR, reaching 1e-5 at 332B tokens.
-
-### The GPT mode - ATT block
-
-The RWKV-3 does not have any attention in the usual sense, but we will call this block ATT anyway.
 ```python
 B, T, C = x.size() # x = (Batch,Time,Channel)
 
@@ -156,19 +130,19 @@ rwkv = torch.sigmoid(r) * (wkv / wk).transpose(-1, -2)
 rwkv = self.output(rwkv) # final output projection
 ```
 
-The self.key, self.receptance, self.output matrices are all initialized to zero.
+ self.key, self.receptance, self.output 矩阵一开始就被初始化为零
 
-The time_mix, time_decay, time_first vectors are transferred from a smaller trained model (note: I sort & smooth them too).
+time_mix, time_decay, time_first 向量来自更小的模型
 
-### The GPT mode - FFN block
+### FFN block
 
-The FFN block has three tricks comparing with the usual GPT:
+三个和普通的 PGPT 不同的看
 
-1. My time_mix trick.
+1.  time_mix
 
-2. The sqReLU from the Primer paper.
+2.  sqReLU
 
-3. An extra receptance-gate (similar to the receptance-gate in ATT block).
+3. 额外的 receptance-gate
 ```python
 # Mix x with the previous timestep to produce xk, xr
 xx = self.time_shift(x)
@@ -184,248 +158,3 @@ kv = self.value(k)
 rkv = torch.sigmoid(self.receptance(xr)) * kv
 return rkv
 ```
-The self.value, self.receptance matrices are all initialized to zero.
-
-## RWKV-4 improvements
-
-![RWKV-v3-plan](RWKV-v3-plan.png)
-
-## From GPT to RWKV (the formulas)
-
-Let F[t] be the system state at t.
-
-Let x[t] be the new external input at t.
-
-In GPT, predicting F[t+1] requires considering F[0], F[1], .. F[t]. So it takes O(T^2) to generate a length T sequence.
-
-The **simplified formula** for GPT:
-
-![F[\mathrm{t}+1]=\frac{\sum_{\mathrm{i}=0}^{\mathrm{t}} \exp (\mathbf{Q}x[\mathrm{t}] * \mathbf{K}F[\mathrm{i}]) \cdot(\mathbf{V}F[\mathrm{i}])}{\sum_{\mathrm{i}=0}^{\mathrm{t}} \exp (\mathbf{Q}x[\mathrm{t}] * \mathbf{K}F[\mathrm{i}])}](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+F%5B%5Cmathrm%7Bt%7D%2B1%5D%3D%5Cfrac%7B%5Csum_%7B%5Cmathrm%7Bi%7D%3D0%7D%5E%7B%5Cmathrm%7Bt%7D%7D+%5Cexp+%28%5Cmathbf%7BQ%7Dx%5B%5Cmathrm%7Bt%7D%5D+%2A+%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bi%7D%5D%29+%5Ccdot%28%5Cmathbf%7BV%7DF%5B%5Cmathrm%7Bi%7D%5D%29%7D%7B%5Csum_%7B%5Cmathrm%7Bi%7D%3D0%7D%5E%7B%5Cmathrm%7Bt%7D%7D+%5Cexp+%28%5Cmathbf%7BQ%7Dx%5B%5Cmathrm%7Bt%7D%5D+%2A+%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bi%7D%5D%29%7D)
-
-It's very capable in theory, however that **does not mean we can fully utilize its capability with usual optimizers**. I suspect the loss landscape is too difficult for our current methods.
-
-Compare with the **simplified formula** for RWKV (the parallel mode, looks similar to Apple's AFT):
-
-![F[\mathrm{t}+1]=\sigma(\mathbf{R}x[\mathrm{t}]) \cdot \frac{\sum_{\mathrm{i}=0}^{\mathrm{t}} \exp (\mathbf{W} \cdot(\mathrm{t}-\mathrm{i})) \cdot \exp (\mathbf{K}F[\mathrm{i}]) \cdot(\mathbf{V}F[\mathrm{i}])}{\sum_{\mathrm{i}=0}^{\mathrm{t}} \exp (\mathbf{W} \cdot(\mathrm{t}-\mathrm{i})) \cdot \exp (\mathbf{K }F[\mathrm{i}])}](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+F%5B%5Cmathrm%7Bt%7D%2B1%5D%3D%5Csigma%28%5Cmathbf%7BR%7Dx%5B%5Cmathrm%7Bt%7D%5D%29+%5Ccdot+%5Cfrac%7B%5Csum_%7B%5Cmathrm%7Bi%7D%3D0%7D%5E%7B%5Cmathrm%7Bt%7D%7D+%5Cexp+%28%5Cmathbf%7BW%7D+%5Ccdot%28%5Cmathrm%7Bt%7D-%5Cmathrm%7Bi%7D%29%29+%5Ccdot+%5Cexp+%28%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bi%7D%5D%29+%5Ccdot%28%5Cmathbf%7BV%7DF%5B%5Cmathrm%7Bi%7D%5D%29%7D%7B%5Csum_%7B%5Cmathrm%7Bi%7D%3D0%7D%5E%7B%5Cmathrm%7Bt%7D%7D+%5Cexp+%28%5Cmathbf%7BW%7D+%5Ccdot%28%5Cmathrm%7Bt%7D-%5Cmathrm%7Bi%7D%29%29+%5Ccdot+%5Cexp+%28%5Cmathbf%7BK+%7DF%5B%5Cmathrm%7Bi%7D%5D%29%7D)
-
-The R, K, V are trainable matrices, and W is a trainable vector (time-decay factor for each channel).
-
-In GPT, the contribution of F[i] to F[t+1] is weighted by ![ \exp (\mathbf{Q}x[\mathrm{t}] * \mathbf{K}F[\mathrm{i}]) ](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle++%5Cexp+%28%5Cmathbf%7BQ%7Dx%5B%5Cmathrm%7Bt%7D%5D+%2A+%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bi%7D%5D%29+).
-
-In RWKV-2, the contribution of F[i] to F[t+1] is weighted by ![\sigma(\mathbf{R}x[\mathrm{t}]) \cdot \exp (\mathbf{W} \cdot(\mathrm{t}-\mathrm{i})) \cdot \exp (\mathbf{K}F[\mathrm{i}]) ](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+%5Csigma%28%5Cmathbf%7BR%7Dx%5B%5Cmathrm%7Bt%7D%5D%29+%5Ccdot+%5Cexp+%28%5Cmathbf%7BW%7D+%5Ccdot%28%5Cmathrm%7Bt%7D-%5Cmathrm%7Bi%7D%29%29+%5Ccdot+%5Cexp+%28%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bi%7D%5D%29+).
-* The ![\sigma](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+%5Csigma) is a non-linearity and we can use sigmoid. 
-* Note ![\sigma(\mathbf{R}x[\mathrm{t}])](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+%5Csigma%28%5Cmathbf%7BR%7Dx%5B%5Cmathrm%7Bt%7D%5D%29) is not in the denominator, and I call R the "receptance".
-* The ![\exp (\mathbf{W} \cdot(\mathrm{t}-\mathrm{i}))](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+%5Cexp+%28%5Cmathbf%7BW%7D+%5Ccdot%28%5Cmathrm%7Bt%7D-%5Cmathrm%7Bi%7D%29%29) is the time-decay factor. I proposed the same idea (scaling the attention by distance) in Aug 2020 and called it the "time-weighting" (check the commit history of https://github.com/BlinkDL/minGPT-tuned).
-
-Here comes the punchline: we can rewrite it into a RNN (recursive formula). Note:
-
-![F[1]=\sigma(\mathbf{R }x[0]) \cdot \frac{ \exp (\mathbf{K }F[0]) \cdot(\mathbf{V }F[0])}{\exp (\mathbf{K }F[0])}](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+F%5B1%5D%3D%5Csigma%28%5Cmathbf%7BR+%7Dx%5B0%5D%29+%5Ccdot+%5Cfrac%7B+%5Cexp+%28%5Cmathbf%7BK+%7DF%5B0%5D%29+%5Ccdot%28%5Cmathbf%7BV+%7DF%5B0%5D%29%7D%7B%5Cexp+%28%5Cmathbf%7BK+%7DF%5B0%5D%29%7D)
-
-![F[2]=\sigma(\mathbf{R }x[1]) \cdot \frac{ \exp (\mathbf{K }F[1]) \cdot(\mathbf{V }F[1])+\exp (\mathbf{W} ) \cdot \exp (\mathbf{K }F[0]) \cdot(\mathbf{V }F[0])}{ \exp (\mathbf{K }F[1])+\exp (\mathbf{W} ) \cdot \exp (\mathbf{K }F[0])}](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+F%5B2%5D%3D%5Csigma%28%5Cmathbf%7BR+%7Dx%5B1%5D%29+%5Ccdot+%5Cfrac%7B+%5Cexp+%28%5Cmathbf%7BK+%7DF%5B1%5D%29+%5Ccdot%28%5Cmathbf%7BV+%7DF%5B1%5D%29%2B%5Cexp+%28%5Cmathbf%7BW%7D+%29+%5Ccdot+%5Cexp+%28%5Cmathbf%7BK+%7DF%5B0%5D%29+%5Ccdot%28%5Cmathbf%7BV+%7DF%5B0%5D%29%7D%7B+%5Cexp+%28%5Cmathbf%7BK+%7DF%5B1%5D%29%2B%5Cexp+%28%5Cmathbf%7BW%7D+%29+%5Ccdot+%5Cexp+%28%5Cmathbf%7BK+%7DF%5B0%5D%29%7D)
-
-Therefore it's straightforward to verify:
-
-![F[t+1]=\sigma(\mathbf{R }x[t]) \cdot \frac{\exp (\mathbf{K}F[\mathrm{t}]) \cdot(\mathbf{V}F[\mathrm{t}])+\exp (\mathbf{W}) \cdot A[\mathrm{t}]}{ \exp (\mathbf{K}F[\mathrm{t}])+\exp (\mathbf{W}) \cdot B[\mathrm{t}]}](https://render.githubusercontent.com/render/math?math=%5Ccolor%7Bblack%7D%5Cdisplaystyle+F%5Bt%2B1%5D%3D%5Csigma%28%5Cmathbf%7BR+%7Dx%5Bt%5D%29+%5Ccdot+%5Cfrac%7B%5Cexp+%28%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bt%7D%5D%29+%5Ccdot%28%5Cmathbf%7BV%7DF%5B%5Cmathrm%7Bt%7D%5D%29%2B%5Cexp+%28%5Cmathbf%7BW%7D%29+%5Ccdot+A%5B%5Cmathrm%7Bt%7D%5D%7D%7B+%5Cexp+%28%5Cmathbf%7BK%7DF%5B%5Cmathrm%7Bt%7D%5D%29%2B%5Cexp+%28%5Cmathbf%7BW%7D%29+%5Ccdot+B%5B%5Cmathrm%7Bt%7D%5D%7D)
-
-where A[t] and B[t] are the numerator and denominator of the previous step, respectively.
-
-I believe RWKV is performant because W is like repeatedly applying a diagonal matrix. Note (P^{-1} D P)^n = P^{-1} D^n P, so it is similar to repeatedly applying a general diagonalizable matrix.
-
-Moreover it's possible to turn it into a continuous ODE (a bit similar to State Space Models). I will write about it later.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=BlinkDL/RWKV-LM&type=Date)](https://star-history.com/#BlinkDL/RWKV-LM&Date)
-
-## Multimodal ideas
-
-I have an idea for [text --> 32x32 RGB image] using a LM (transformer, RWKV, etc.). Will test it soon.
-
-Firstly, LM loss (instead of L2 loss), so the image will not be blurry.
-
-Secondly, color quantization. For example, only allowing 8 levels for R/G/B. Then the image vocab size is 8x8x8 = 512 (for each pixel), instead of 2^24.
-Therefore, a 32x32 RGB image = a len1024 sequence of vocab512 (image tokens), which is a typical input for usual LMs.
-(Later we can use diffusion models to upsample and generate RGB888 images. We might be able to use a LM for this too.)
-
-Thirdly, 2D positional embeddings that are easy for the model to understand.
-For example, add one-hot X & Y coords to the first 64(=32+32) channels. Say if the pixel is at x=8, y=20, then we will add 1 to channel 8 and channel 52 (=32+20).
-Moreover probably we can add the float X & Y coords (normalized to 0~1 range) to another 2 channels. And other periodic pos. encoding might help too (will test). 
-
-Finally, RandRound when doing the color quantization in the DataLoader.
-For example, if the float level is 4.578, then there is a 57.8% chance to use 5, and (1-57.8%) chance to use 4.
-And we can allow both 4 and 5 in the prediction, but the loss will be higher if the prediction is 4.
-
-Multi-task training might help too. I will try this dataset format:
-[TxtFirst] [Desc of Img (txt tokens)] [Img] [img tokens]
-and sometimes
-[ImgFirst] [img tokens] [Txt] [Desc of Img (txt tokens)]
-... the order of the imgs should be randomized in the DataLoader, and [TxtFirst] [ImgFirst] [Img] [Txt] are special tokens
-and do random sampling of the full dataset. So sometimes the model will see the img tokens first and then the corresponding txt tokens, which is a [img -> txt] task. And the model will see some partial imgs and partial txts. I think a char-level LM might help the model to write correct text on images.
-
-## How to sample a large dataset (for training)
-
-I am using a trick to sample the Pile deterministically yet randomly enough.
-
-Let's say the pile has x chunks (a chunk = ctx_len tokens).
-
-pick a prime number p just less than x, and make sure p = 2 (mod 3).
-
-Use (step * step * step) mod p to sample it. Add some bias to step for extra randomness.
-
-## The top-p-x sampling method (for inference)
-
-We propose a new sampling method called top-p-x:
-
-it's like top-p, and the only difference is you also keep all tokens whose prob > x.
-
-Try x = 0.01 first.
-
-## Better Learning Rate Schedule via Variantional Method of Loss Curve
-
-I propose a simple new method to find better LR schedules. The method is cost-efficient and practical for large LMs. The takeaway is we can model the loss curve dynamics (phenomenology) w.r.t. the LR, and a nice closed-form LR curve can be directly computed from it using variantional method. Moreover we can predict the final loss with reasonable accuracy.
-
-UPDATE: In "Conclusion 1.", use the best-fitting regime (ignore the initial steps where our approximations break down) to fit the parameters.
-
-Try this: fixed lr for 1 hr, then exponential decay to 0.2 * lr in 12 hrs, and choose the t=[1hr, 13hr] segment.
-
-In the last three plots, black = predicted loss curve of the new LR schedule, blue = original (unoptimized) real loss curve, orange = new LR schedule.
-
-![better_lr_schedule](Research/better_lr_schedule.png)
-
-# RWKV v1
-
-We propose the RWKV language model, with alternating time-mix and channel-mix layers:
-
-<img src=
-"https://render.githubusercontent.com/render/math?math=%5Cdisplaystyle+%5Cbegin%7Balign%2A%7D%0A%5Ctext%7BTime-mix+%3A%7D+%26%26+%5Ctext%7BTM%7D_%7Bt%2Cc%7D+%26%26%3D%26%26%5Ctext%7Bsigmoid%7D%28%5Ctext%7BR%7D_%7Bt%2Cc%7D%29+%26%26%5Ccdot%26%26+%26%26%5Ctextstyle%5Csum_%7Bu%7D+%26%26%5Ctextbf%7BW%7D_%7Bt%2Cu%2Cc%7D+%26%26%5Ccdot%26%26+%5Ctext%7Bsoftmax%7D_t%28%5Ctext%7BK%7D_%7Bu%2Cc%7D%29+%26%26%5Ccdot%26%26+%5Ctext%7BV%7D_%7Bu%2Cc%7D%5C%5C%0A%5Ctext%7BChannel-mix+%3A%7D+%26%26+%5Ctext%7BCM%7D_%7Bt%2Cc%7D+%26%26%3D%26%26%5Ctext%7Bsigmoid%7D%28%5Ctext%7BR%7D_%7Bt%2Cc%7D%29+%26%26%5Ccdot%26%26+%26%26%5Ctextstyle%5Csum_d+%26%26%5Ctextbf%7BW%7D_%7Bc%2Cd%7D+%26%26%5Ccdot%26%26+%5Ctext%7Bgelu%7D%28%5Ctext%7BK%7D_%7Bt%2Cd%7D%29+%26%26%5Ccdot%26%26+%5Ctext%7BV%7D_%7Bt%2Cd%7D%0A%5Cend%7Balign%2A%7D%0A" 
-alt="\begin{align*}
-\text{Time-mix :} && \text{TM}_{t,c} &&=&&\text{sigmoid}(\text{R}_{t,c}) &&\cdot&& &&\textstyle\sum_{u} &&\textbf{W}_{t,u,c} &&\cdot&& \text{softmax}_t(\text{K}_{u,c}) &&\cdot&& \text{V}_{u,c}\\
-\text{Channel-mix :} && \text{CM}_{t,c} &&=&&\text{sigmoid}(\text{R}_{t,c}) &&\cdot&& &&\textstyle\sum_d &&\textbf{W}_{c,d} &&\cdot&& \text{gelu}(\text{K}_{t,d}) &&\cdot&& \text{V}_{t,d}
-\end{align*}
-">
-
-* The R, K, V are generated by linear transforms of input, and W is parameter. The idea of RWKV is to decompose attention into R(target) * W(src, target) * K(src). So we can call R "receptance", and sigmoid means it's in 0~1 range.
-
-* The Time-mix is similar to AFT (https://arxiv.org/abs/2105.14103). There are two differences.
-
-(1) We changed the normalization (denominator). For masked language models, we define:
-
-<img src=
-"https://render.githubusercontent.com/render/math?math=%5Cdisplaystyle+%5Ctext%7Bsoftmax%7D_t%28%5Ctext%7BK%7D_%7Bu%2Cc%7D%29+%3D+%5Cfrac%7B%5Cexp%28%5Ctext%7BK%7D_%7Bu%2Cc%7D%29%7D%7B%5Csum_%7Bv+%5Cleq+t%7D%5Cexp%28%5Ctext%7BK%7D_%7Bv%2Cc%7D%29%7D" 
-alt="\text{softmax}_t(\text{K}_{u,c}) = \frac{\exp(\text{K}_{u,c})}{\sum_{v \leq t}\exp(\text{K}_{v,c})}">
-
-**(UPDATE: We are using the original AFT normalization in v2)**
- 
-Initialize K and R matrices (and the output projection matrix) to ZERO for fast & stable convergence.
- 
-(2) We decompose W_{t,u,c} and introduce multi-head W (here h is the corresponding head of c):
-
-<img src=
-"https://render.githubusercontent.com/render/math?math=%5Cdisplaystyle+W_%7Bt%2Cu%2Cc%7D%3Df_h%28t-u%29%5Ccdot+%5Calpha_h%28u%29+%5Ccdot+%5Cbeta_h%28t%29" 
-alt="W_{t,u,c}=f_h(t-u)\cdot \alpha_h(u) \cdot \beta_h(t)">
-
-Moreover we multiply the final output of Time-mix layer by γ(t). The reason for the α β γ factors, is because the context size is smaller when t is small, and this can be compensated using the α β γ factors.
-
-**(UPDATE: We remove α β γ factors in v2-RNN and restrict W to be of a simple form and hence able to rewrite it as RNN)**
-
-* The Channel-mix is similar to GeGLU (https://arxiv.org/abs/2002.05202) with an extra R factor. Initialize R and W matrices to ZERO for fast & stable convergence.
-
-* Finally, we add extra token-shift (time-shift mixing) as in (https://github.com/BlinkDL/minGPT-tuned).
-
-# Token-shift (time-shift mixing)
-
-The token-shift explicitly uses (half the channels of this token) & (half the channels of prev token) to generate all vectors (QKV, RWKV, ...).
-
-```
-self.time_shift = nn.ZeroPad2d((0,0,1,-1))
-
-x = torch.cat([self.time_shift(x[:, :, :C//2]), x[:, :, C//2:]], dim = -1)
-```
-
-Dividing channels by 2 and shift-1 works great for char-level English and char-level Chinese LM.
-
-However for BPE-level English LM, it's only effective if your embedding is large enough (at least 1024 - so the usual small L12-D768 model is not enough).
-
-My theory on the effectiveness of token-shift:
-
-When we train a GPT, the hidden representation of a token has to accomplish two different objects:
-
-1. Predict the next token. Sometimes this is easy (obvious next token).
-
-2. Collect all previous context info, so later tokens can use it. This is always hard.
-
-The shifted channels can focus on (2), so we have good propagation of info. It's like some kind of residual connection, or a small RNN inside the transformer.
-
-You can use token-shift in usual QKV self-attention too. I looked at the weights, and found V really likes the shifted channels, less so for Q. Makes sense if you think about it. I also found you may want to use less mixing in higher layers.
-
-p.s. There is a MHA_pro model in this repo with strong performance. Give it a try :)
-
-# The Head-QK Trick: learning to copy and avoid tokens
-
-In usual transformer, a small model has difficulty copying tokens (such as person names) in the context. We add extra Q & K to the final output such that the model can directly copy (or avoid) tokens in the context. Afterwards the model will teach itself NER (named entity recognition) if you look at the learned weights.
-```
-q = self.head_q(x)[:,:T,:] # projecting to 256-d
-k = self.head_k(x)[:,:T,:] # projecting to 256-d
-c = (q @ k.transpose(-2, -1)) * (1.0 / 256)
-c = c.masked_fill(self.copy_mask[:T,:T] == 0, 0)
-c = c @ F.one_hot(idx, num_classes = self.config.vocab_size).float()       
-x = self.head(x) + c
-```
-Note: when a token occurs multiple times in the context, it might be better to use max(prob) instead of sum(prob).
-
-# The top-a sampling method
-
-We also propose a new sampling method called top-a (as in src/utils.py):
-
-(1) Find the max probability p_max after softmax.
-
-(2) Remove all entries whose probability is lower than 0.2 * pow(p_max, 2). So it's adaptive, hence "top-a".
-
-(3) Feel free to tune the 0.2 and 2 factor. Tune 0.2 first.
-
-The idea of top-a:
-1. If max_prob=0.9, then remove all tokens with prob < 0.162 (so, removing all alternatives)
-2. If max_prob=0.5, then remove all tokens with prob < 0.05  (so, allowing more choices)
-3. If max_prob=0.1, then remove all tokens with prob < 0.002 (so, allowing lots of possibilities)
-
-```
-probs = F.softmax(logits, dim=-1)
-
-limit = torch.pow(torch.max(probs), 2) * 0.02
-logits[probs < limit] = -float('Inf')
-```
-
-# Performance
-
-Character-level loss on simplebooks-92 dataset https://dldata-public.s3.us-east-2.amazonaws.com/simplebooks.zip
-
-![RWKV-vs-MHA](RWKV-vs-MHA.png)
-
-Gray: usual MHA+Rotary+GeGLU - performance not as good. 17.2M params.
-
-Red: RWKV ("linear" attention) - VRAM friendly - quite faster when ctx window is long - good performance. 16.6M params.
-
-Green: MHA+Rotary+GeGLU+Token_shift. 17.2M params.
-
-Blue: MHA_pro (MHA with various tweaks & RWKV-type-FFN) - slow - needs more VRAM - good performance. 16.6M params.
-
-```
-@software{peng_bo_2021_5196578,
-  author       = {PENG Bo},
-  title        = {BlinkDL/RWKV-LM: 0.01},
-  month        = aug,
-  year         = 2021,
-  publisher    = {Zenodo},
-  version      = {0.01},
-  doi          = {10.5281/zenodo.5196577},
-  url          = {https://doi.org/10.5281/zenodo.5196577}
-}
-```
-
-# Initialization
-
-We use careful initialization for RWKV to get fast convergence - orthogonal matrices with proper scaling, and special time_w curves. Check model.py for details.
-
-Some learned time_w examples:
-
-![RWKV-time-w](RWKV-time-w.png)
