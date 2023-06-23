@@ -9,7 +9,7 @@ prompt = f'\nQ & A\n\nQuestion:\n{qq}\n\nDetailed Expert Answer:\n' # let the mo
 
 ### Inference
 
-* **运行 RWKV-4 Pile models:** Download models from https://huggingface.co/BlinkDL. Set TOKEN_MODE = 'pile' in run.py and run it. It's fast even on CPU (the default mode).
+* **运行 RWKV-4 Pile models:** https://huggingface.co/BlinkDL. Set TOKEN_MODE = 'pile' in run.py
 * **Colab for RWKV-4 Pile 1.5B**: https://colab.research.google.com/drive/1F7tZoPZaWJf1fsCmZ5tjw6sYHiFOYVWM
 * 在 browser 中运行 https://github.com/BlinkDL/RWKV-LM/issues/7
 * RWKV-4 Web Demo: https://josephrocca.github.io/rwkv-v4-web/demo/ (note: only greedy sampling for now)
