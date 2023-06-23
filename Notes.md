@@ -44,18 +44,14 @@ out.write(ss + "\n")
 
 
 ## RWKV的原理
-* 来源: https://arxiv.org/abs/2105.14103
-
+* 来源 1: https://arxiv.org/abs/2105.14103
+* 来源 2: https://arxiv.org/abs/2305.13048
+* 论文的知乎解答 https://www.zhihu.com/question/602564718
 * SmallInitEmb: https://github.com/BlinkDL/SmallInitEmb 提高 embedding quality
-
 * Token-shift: https://github.com/BlinkDL/RWKV-LM#token-shift-time-shift-mixing 适用于所有 transformers, 对于 char-level models 有用
-
 * Head-QK: https://github.com/BlinkDL/RWKV-LM#the-head-qk-trick-learning-to-copy-and-avoid-tokens 适用于所有 transformers
-
 * Better initilization: https://github.com/BlinkDL/RWKV-LM/blob/main/RWKV-v2-RNN/src/model.py).
-
 * https://www.reddit.com/r/MachineLearning/comments/umq908/r_rwkvv2rnn_a_parallelizable_rnn_with/ 将一些参数从小模型转移到大模型, 以实现更快更好的收敛
-
 * CUDA kernel: https://github.com/BlinkDL/RWKV-CUDA to speedup training.
 
 
